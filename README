@@ -1,5 +1,5 @@
 DiskTrim 1.1 by Antoni Sawicki and Tomasz Nowak
-Requires Windows 2008 R2 / Windows 8.1 or above
+Requires Windows 2012 R2 / Windows 8.1 or above
 
 DiskTrim is a small command line application for Windows that allows
 to send  ATA TRIM / SCSI UNMAP command directly to an SSD using SCSI
