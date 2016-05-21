@@ -2,12 +2,12 @@
 // DiskTrim 1.1 by Antoni Sawicki and Tomasz Nowak
 // Requires Windows 2012 R2 / Windows 8.1 or above
 //
-// DiskTrim is a small command line application for Windows that allows
-// to send  ATA TRIM / SCSI UNMAP command directly to an SSD using SCSI
-// pass through.  It functions to securely erase contents of an SSD and
-// test whether TRIM actually worked.  If you just want to test if your
-// SSD supports TRIM under Windows without deleting it's contents,  you
-// can create and mount a small VHDX file and run DiskTrim on the  VHDX
+// DiskTrim:  a small command line application for Windows that allows
+// to send ATA TRIM / SCSI UNMAP command directly to an SSD using SCSI
+// pass through. It allows to securely erase contents of SSD drive and
+// test whether TRIM actually worked. If you just want to test if your
+// SSD supports TRIM under Windows without deleting it's contents, you
+// can create and mount a small VHDX file and run DiskTrim on the VHDX
 // instead of physical disk. 
 //
 #include <windows.h>
