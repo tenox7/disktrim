@@ -1,5 +1,5 @@
 //
-// DiskTrim 1.0 by Antoni Sawicki and Tomasz Nowak
+// DiskTrim 1.1 by Antoni Sawicki and Tomasz Nowak
 // Requires Windows 2008 R2 / Windows 8.1 or above
 //
 // DiskTrim is a small command line application for Windows that allows
@@ -137,7 +137,7 @@ int wmain(int argc, WCHAR *argv[]) {
     PREAD_CAPACITY      pReadCapacity;
     ULONG               DiskLbaCount, DiskBlockSize;
 
-    wprintf(L"=[ DiskTrim v1.0 by Antoni Sawicki & Tomasz Nowak, %s %s ]=\n\n", __WDATE__, __WTIME__);
+    wprintf(L"=[ DiskTrim v1.1 by Antoni Sawicki & Tomasz Nowak, %s %s ]=\n\n", __WDATE__, __WTIME__);
 
 
     if(argc==3) {
@@ -178,6 +178,8 @@ int wmain(int argc, WCHAR *argv[]) {
     //
     // Query disk size
     //
+    wprintf(L"Querying drive parameters...\n");
+
     TransferSize = 36;
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
@@ -228,6 +230,7 @@ int wmain(int argc, WCHAR *argv[]) {
     //
     // Uninitialize disk so it doesn't have any partitions
     //
+    wprintf(L"Deleting disk partitions...\n");
     if(!DeviceIoControl(hDisk, IOCTL_DISK_DELETE_DRIVE_LAYOUT, NULL, 0, NULL, 0, &BytesRet, NULL)) 
        error(1, L"Error on DeviceIoControl IOCTL_DISK_DELETE_DRIVE_LAYOUT [%d] ", BytesRet );
 
@@ -235,6 +238,7 @@ int wmain(int argc, WCHAR *argv[]) {
     //
     // Write test pattern
     //
+    wprintf(L"Writing test pattern...\n");
     ZeroMemory(&Ovr, sizeof(Ovr));
     Ovr.Offset = 0x00;
     Ovr.OffsetHigh = 0;
@@ -258,6 +262,7 @@ int wmain(int argc, WCHAR *argv[]) {
     //
     // UNMAP
     //
+    wprintf(L"Performing UNMAP on the LBA range...\n");
     TransferSize = sizeof(UNMAP_LIST_HEADER) + sizeof(UNMAP_BLOCK_DESCRIPTOR);
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
@@ -307,6 +312,7 @@ int wmain(int argc, WCHAR *argv[]) {
 
     ZeroMemory(TestBuff, sizeof(TestBuff));
 
+    wprintf(L"Reading test pattern...\n");
     if(!ReadFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
         error(1, L"Error reading disk");
 
