@@ -1,5 +1,5 @@
 //
-// DiskTrim 1.1 by Antoni Sawicki and Tomasz Nowak
+// DiskTrim 1.2 by Antoni Sawicki and Tomasz Nowak
 // Requires Windows 2012 R2 / Windows 8.1 or above
 //
 // DiskTrim:  a small command line application for Windows that allows
@@ -86,11 +86,14 @@ typedef struct _SCSI_PASS_THROUGH {
 #define __WDATE__ WIDEN(__DATE__)
 #define __WTIME__ WIDEN(__TIME__)
 
-#define USAGE L"Usage: %s [-y] <disk #>\n\nDisk# number can be obtained from:\n"\
+#define USAGE L"Usage: disktrim [-y] <disk #>\n\n"\
+              L"Disk# number can be obtained from:\n"\
               L"- diskmgmt.msc\n"\
               L"- diskpart (list disk)\n"\
+              L"- wmic diskdrive get index,caption,size\n"\
               L"- get-disk\n"\
-              L"- get-physicaldisk | ft deviceid,friendlyname\n\n"
+              L"- get-physicaldisk | ft deviceid,friendlyname\n\n"\
+              L"Long form \\\\.\\PhysicalDriveXX is also allowed\n\n"
 
 void error(int exit, WCHAR *msg, ...) {
     va_list ap, valist;
@@ -112,6 +115,8 @@ void error(int exit, WCHAR *msg, ...) {
         putchar(L'\n');
     }
     
+    fflush(stdout);
+
     if(exit)
         ExitProcess(1);
 }
@@ -137,7 +142,8 @@ int wmain(int argc, WCHAR *argv[]) {
     PREAD_CAPACITY      pReadCapacity;
     ULONG               DiskLbaCount, DiskBlockSize;
 
-    wprintf(L"=[ DiskTrim v1.1 by Antoni Sawicki & Tomasz Nowak, %s %s ]=\n\n", __WDATE__, __WTIME__);
+    wprintf(L"DiskTrim v1.2 by Antoni Sawicki & Tomasz Nowak, Build %s %s\n\n", __WDATE__, __WTIME__);
+
 
 
     if(argc==3) {
@@ -146,17 +152,22 @@ int wmain(int argc, WCHAR *argv[]) {
             y=1;
         }
         else {
-            error(1, USAGE, argv[0]);
+            error(1, L"argc=3 argv[1]=%s argv[2]=%s\n\n%s\n", argv[1], argv[2], USAGE);
         }
     }
     else if(argc==2) {
         DiskNo=argv[1];
     }
     else {
-        error(1, USAGE, argv[0]);
+        error(1, L"argc=%d\n\n%s\n", argc, USAGE);
     }
 
-    _snwprintf(DevName, sizeof(DevName), L"\\\\.\\PhysicalDrive%s", DiskNo);
+    if(_wcsnicmp(DiskNo, L"\\\\.\\PhysicalDrive", wcslen(L"\\\\.\\PhysicalDrive"))==0)
+        wcsncpy(DevName, DiskNo, sizeof(DevName));
+    else if(iswdigit(DiskNo[0]))
+        _snwprintf(DevName, sizeof(DevName), L"\\\\.\\PhysicalDrive%s", DiskNo);
+    else
+        error(1, USAGE, argv[0]);
 
     if ((hDisk = CreateFileW(DevName, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING, NULL )) == INVALID_HANDLE_VALUE)
         error(1, L"Cannot open %s", DevName);
@@ -319,9 +330,11 @@ int wmain(int argc, WCHAR *argv[]) {
     wprintf(L"Buffer after TRIM : \"%s\" [if empty, TRIM worked]\n", TestBuff);
     
     if(wcscmp(TestBuff, TEST_PATTERN)==0)
-        wprintf(L"ERROR: TRIM didn't seem to work\n");
-    else if(wcslen(TestBuff)==0)
-        wprintf(L"Looks like TRIM worked!\n");
+        error(1, L"TRIM didn't seem to work\n");
+
+    wprintf(L"Looks like TRIM worked!\n");
+
+    fflush(stdout);
 
     return 0;
 }
