@@ -14,7 +14,7 @@
 #AutoIt3Wrapper_Res_Fileversion=1.2.0.0
 #AutoIt3Wrapper_Res_RequestedExecutionLevel=RequireAdministrator
 
-FileInstall("disktrim.exe", @TempDir & "\disktrim.exe")
+FileInstall("disktrim-x64.exe", @TempDir & "\disktrim.exe")
 
 
 Global $Command = ""
