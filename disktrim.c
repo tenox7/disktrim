@@ -24,6 +24,8 @@
 #include <wchar.h>
 #include <stdarg.h>
 
+//#define SAFE
+
 #pragma pack(1)
 
 typedef struct _CDB_10 {
@@ -169,6 +171,11 @@ int wmain(int argc, WCHAR *argv[]) {
     wint_t              p;
     PSCSI_PASS_THROUGH  ScsiPass;
     GET_LENGTH_INFORMATION  DiskLengthInfo;
+    STORAGE_PROPERTY_QUERY trim_q = { StorageDeviceTrimProperty,  PropertyStandardQuery };
+    DEVICE_TRIM_DESCRIPTOR trim_d = { 0 };
+    STORAGE_PROPERTY_QUERY desc_q = { StorageDeviceProperty,  PropertyStandardQuery };
+    STORAGE_DESCRIPTOR_HEADER desc_h = { 0 };
+    PSTORAGE_DEVICE_DESCRIPTOR desc_d;
     PVOID               Buffer;
     ULONG               BufLen;
     ULONG               TransferSize;
@@ -185,7 +192,7 @@ int wmain(int argc, WCHAR *argv[]) {
     ULONG64             LBAStart, LBACount;
 
 
-    wprintf(L"DiskTrim v2.0 by Antoni Sawicki & Tomasz Nowak, Build %s %s\n\n", __WDATE__, __WTIME__);
+    wprintf(L"DiskTrim v2.2 by Antoni Sawicki & Tomasz Nowak, Build %s %s\n\n", __WDATE__, __WTIME__);
 
     if (argc == 3) {
         if (wcscmp(argv[1], L"-y") == 0) {
@@ -216,10 +223,37 @@ int wmain(int argc, WCHAR *argv[]) {
     if (!DeviceIoControl(hDisk, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &DiskLengthInfo, sizeof(GET_LENGTH_INFORMATION), &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_DISK_GET_LENGTH_INFO [%d] ", BytesRet);
 
+    if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &trim_q, sizeof(trim_q), &trim_d, sizeof(trim_d), &BytesRet, NULL))
+        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
+
+    if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), &desc_h, sizeof(desc_h), &BytesRet, NULL))
+        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
+
+    desc_d = malloc(desc_h.Size);
+    ZeroMemory(desc_d, desc_h.Size);
+
+    if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), desc_d, desc_h.Size, &BytesRet, NULL))
+        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
+
+    wprintf(L"Disk: %s\nSize: %.1f GB \n", DiskNo, (float)DiskLengthInfo.Length.QuadPart / 1024.0 / 1024.0 / 1024.0);
+
+    if(desc_d->Version == sizeof(STORAGE_DEVICE_DESCRIPTOR)) 
+        printf("Type: %s %s\n", 
+                    (desc_d->VendorIdOffset) ? (char*)desc_d+desc_d->VendorIdOffset : "n/a", 
+                    (desc_d+desc_d->ProductIdOffset) ? (char*)desc_d+desc_d->ProductIdOffset : "n/a"
+        );
+
+    if(trim_d.Version == sizeof(DEVICE_TRIM_DESCRIPTOR) && trim_d.TrimEnabled == 1)
+        wprintf(L"Trim: Supported\n");
+    else
+        wprintf(L"Trim: Not Supported\n");
+
 
     if (!y) {
-        wprintf(L"WARNING: Contents of your drive an all data will be permanently erased! \n");
-        wprintf(L"\nDo you want to erase disk %s, Size: %.1f GB, (y/N) ? ", DiskNo, (float)DiskLengthInfo.Length.QuadPart / 1024.0 / 1024.0 / 1024.0);
+        wprintf(L"\n"
+                L"WARNING: Contents of your drive an all data will be permanently erased! \n"
+                L"There is no possibility of data recovery even with 3rd party companies.\n\n"  
+                L"Do you want to erase this disk (y/N) ? ");
         p = getwchar();
         if (p == L'y')
             wprintf(L"All right...\n");
@@ -271,6 +305,11 @@ int wmain(int argc, WCHAR *argv[]) {
     wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB\n", DevName, DiskLbaCount, DiskBlockSize, (float)(((float)DiskLbaCount*(float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0));
 
     free(Buffer);
+
+    // There is no going back after this...
+    #ifdef SAFE
+    return 0;
+    #endif
 
     //
     // Uninitialize disk so it doesn't have any partitions in order for pass through to work
