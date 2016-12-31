@@ -133,19 +133,21 @@ typedef struct _SCSI_PASS_THROUGH {
 
 void error(int exit, WCHAR *msg, ...) {
     va_list valist;
-    WCHAR vaBuff[1024] = { '\0' };
-    WCHAR errBuff[1024] = { '\0' };
+    WCHAR vaBuff[1024]={L'\0'};
+    WCHAR errBuff[1024]={L'\0'};
     DWORD err;
+
+    err=GetLastError();
 
     va_start(valist, msg);
     _vsnwprintf_s(vaBuff, sizeof(vaBuff), sizeof(vaBuff), msg, valist);
     va_end(valist);
 
-    wprintf(L"ERROR: %s\n", vaBuff);
-    err = GetLastError();
+    wprintf(L"%s: %s\n", (exit) ? L"ERROR":L"WARNING", vaBuff);
+
     if (err) {
         FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errBuff, sizeof(errBuff), NULL);
-        wprintf(L"[%08X] %s\n\n", err, errBuff);
+        wprintf(L"[0x%08X] %s\n\n", err, errBuff);
     }
     else {
         putchar(L'\n');
@@ -153,7 +155,7 @@ void error(int exit, WCHAR *msg, ...) {
 
     FlushFileBuffers(GetStdHandle(STD_OUTPUT_HANDLE));
 
-    if (exit)
+    if(exit)
         ExitProcess(1);
 }
 
