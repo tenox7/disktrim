@@ -126,7 +126,7 @@ typedef struct _SCSI_PASS_THROUGH {
 
 #define USAGE L"Usage: disktrim [-y] <disk #>\n\n"\
               L"Disk# number can be obtained from:\n"\
-              L"- diskmgmt.msc\n"\
+              L"- Disk Management (diskmgmt.msc)\n"\
               L"- diskpart (list disk)\n"\
               L"- wmic diskdrive get index,caption,size\n"\
               L"- get-disk\n"\
@@ -224,10 +224,10 @@ int wmain(int argc, WCHAR *argv[]) {
         error(1, L"Error on DeviceIoControl IOCTL_DISK_GET_LENGTH_INFO [%d] ", BytesRet);
 
     if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &trim_q, sizeof(trim_q), &trim_d, sizeof(trim_d), &BytesRet, NULL))
-        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
+        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Trim Property [%d] ", BytesRet);
 
     if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), &desc_h, sizeof(desc_h), &BytesRet, NULL))
-        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
+        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Device Property [%d] ", BytesRet);
 
     desc_d = malloc(desc_h.Size);
     ZeroMemory(desc_d, desc_h.Size);

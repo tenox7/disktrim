@@ -2,10 +2,12 @@ DiskTrim 2.2 by Antoni Sawicki and Tomasz Nowak
 Requires Windows 2012 R2 / Windows 8.1 or above
 
 DiskTrim -- a small command line utility for Windows that allows to
-send ATA TRIM and SCSI UNMAP commands directly to an SSD drive. The 
+send TRIM / UNMAP / DISCARD commands directly to an SSD drive.  The 
 operation is performed arbitrarily on a full sector range from zero
 to the end. It securely erases contents of an entire SSD drive, and
 tests whether TRIM actually worked. 
+
+You can also think of it as blkdiscard(8) utility for Windows.
 
 If you just want to test if your SSD supports TRIM without deleting
 it's entire contents, you can simply create and mount a small .VHDX
