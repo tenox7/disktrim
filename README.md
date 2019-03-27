@@ -10,7 +10,7 @@ operation is performed arbitrarily on a full sector range from zero
 to the end. It securely erases contents of an entire SSD drive, and
 tests whether TRIM actually worked. 
 
-You can also think of it as blkdiscard(8) utility for Windows.
+You can also think of it as equivalent of Linux `blkdiscard(8)` utility for Windows.
 
 If you just want to test if your SSD supports TRIM without deleting
 it's entire contents, you can simply create and mount a small .VHDX
