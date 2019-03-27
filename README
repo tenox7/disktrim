@@ -1,7 +1,10 @@
-DiskTrim 2.2 by Antoni Sawicki and Tomasz Nowak
+DiskTrim for Windows
+====================
+Copyright (c) 2016 by Antoni Sawicki and Tomasz Nowak
+
 Requires Windows 2012 R2 / Windows 8.1 or above
 
-DiskTrim -- a small command line utility for Windows that allows to
+A small command line utility for Microsoft Windows that allows to
 send TRIM / UNMAP / DISCARD commands directly to an SSD drive.  The 
 operation is performed arbitrarily on a full sector range from zero
 to the end. It securely erases contents of an entire SSD drive, and
@@ -13,7 +16,7 @@ If you just want to test if your SSD supports TRIM without deleting
 it's entire contents, you can simply create and mount a small .VHDX
 file on top and run DiskTrim on the VHDX instead of physical disk. 
 
-WARNING:
+# WARNING:
 This utility is particularly dangerous and if used incorrectly - it
 will permanently destroy contents of your SSD drive, and delete all
 your data.  Authors of this software application take absolutely no
