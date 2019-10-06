@@ -1,8 +1,6 @@
 DiskTrim for Windows
 ====================
-Utility for Microsoft Windows that allows to send TRIM / UNMAP / DISCARD commands directly to an SSD drive.  The operation is performed on the whole drive, sectors zero to the end. It securely erases contents of an entire SSD drive, and tests whether TRIM actually worked. 
-
-You can also think of it as equivalent of Linux `blkdiscard(8)` utility for Windows.
+Utility for Microsoft Windows that allows to send TRIM / UNMAP / DISCARD commands directly to an SSD drive.  The operation is performed on the whole drive, sectors zero to the end. It securely erases contents of an entire SSD drive, and tests whether TRIM actually worked. You can also think of it as equivalent of Linux `blkdiscard(8)` utility for Windows.
 
 # WARNING:
 This utility is very dangerous and will irreversibly destroy all your data.
