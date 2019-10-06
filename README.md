@@ -17,6 +17,7 @@ it's entire contents, you can simply create and mount a small .VHDX
 file on top and run DiskTrim on the VHDX instead of physical disk. 
 
 # WARNING:
-This utility is very dangerous and if used incorrectly it
-will ruin your life. Authors of this software application take absolutely no
+This utility is very dangerous and will irreversibly destroy all your data.
+Once the operation is performed the SSD drive is unrecoverable in any way. 
+Authors of this software application take absolutely no
 responsibility for use of this program  and its consequences. 
