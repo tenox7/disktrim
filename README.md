@@ -16,4 +16,5 @@ responsibility for use of this program  and its consequences.
 
 ## Legal
 Copyright (c) 2016 by Antoni Sawicki and Tomasz Nowak
+
 License: Apache 2.0
