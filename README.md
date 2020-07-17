@@ -4,7 +4,7 @@ Utility for Microsoft Windows that allows to send TRIM / UNMAP / DISCARD command
 
 # WARNING:
 This utility is very dangerous and will irreversibly destroy all your data.
-Once the operation is performed the SSD drive is unrecoverable in any way. 
+Once the operation is performed the old data on your SSD drive is unrecoverable in any way. 
 Authors of this software application take absolutely no
 responsibility for use of this program  and its consequences. 
 
