@@ -3,20 +3,20 @@
 // Requires Windows 2012 R2 / Windows 8.1 or above
 //
 // DiskTrim -- a small command line utility for Windows that allows to
-// send ATA TRIM and SCSI UNMAP commands directly to an SSD drive. The 
+// send ATA TRIM and SCSI UNMAP commands directly to an SSD drive. The
 // operation is performed arbitrarily on a full sector range from zero
 // to the end. It securely erases contents of an entire SSD drive, and
-// tests whether TRIM actually worked. 
-// 
+// tests whether TRIM actually worked.
+//
 // If you just want to test if your SSD supports TRIM without deleting
 // it's entire contents, you can simply create and mount a small .VHDX
-// file on top and run DiskTrim on the VHDX instead of physical disk. 
+// file on top and run DiskTrim on the VHDX instead of physical disk.
 //
 // WARNING:
 // This utility is particularly dangerous and if used incorrectly - it
 // will permanently destroy contents of your SSD drive, and delete all
 // your data.  Authors of this software application take absolutely no
-// responsibility for use of this program  and its consequences. 
+// responsibility for use of this program  and its consequences.
 //
 #include <windows.h>
 #include <stdio.h>
@@ -37,7 +37,7 @@ typedef struct _CDB_10 {
     UCHAR       Reserved3 : 3;
     UCHAR       AllocationLength[2];
     UCHAR       Control;
-} CDB_10, *PCDB_10;
+} CDB_10, * PCDB_10;
 
 typedef struct _CDB_16 {
     UCHAR       OperationCode;
@@ -48,27 +48,27 @@ typedef struct _CDB_16 {
     UCHAR       PMI : 1;
     UCHAR       Reserved2 : 7;
     UCHAR       Control;
-} CDB_16, *PCDB_16;
+} CDB_16, * PCDB_16;
 
 
 typedef struct _UNMAP_BLOCK_DESCRIPTOR {
     ULONG64 StartingLba;
     ULONG LbaCount;
     UCHAR Reserved[4];
-} UNMAP_BLOCK_DESCRIPTOR, *PUNMAP_BLOCK_DESCRIPTOR;
+} UNMAP_BLOCK_DESCRIPTOR, * PUNMAP_BLOCK_DESCRIPTOR;
 
 typedef struct _UNMAP_LIST_HEADER {
     USHORT DataLength;
     USHORT BlockDescrDataLength;
     UCHAR Reserved[4];
     UNMAP_BLOCK_DESCRIPTOR Descriptors[0];
-} UNMAP_LIST_HEADER, *PUNMAP_LIST_HEADER;
+} UNMAP_LIST_HEADER, * PUNMAP_LIST_HEADER;
 
 
 typedef struct _READ_CAPACITY10 {
     ULONG       LBA;
     ULONG       BlockLength;
-} READ_CAPACITY10, *PREAD_CAPACITY10;
+} READ_CAPACITY10, * PREAD_CAPACITY10;
 
 typedef struct _READ_CAPACITY16 {
     ULONG64     LBA;
@@ -84,7 +84,7 @@ typedef struct _READ_CAPACITY16 {
     UCHAR       LSB;
     UCHAR       Reserved2[16];
 
-} READ_CAPACITY16, *PREAD_CAPACITY16;
+} READ_CAPACITY16, * PREAD_CAPACITY16;
 
 #pragma pack()
 
@@ -103,7 +103,7 @@ typedef struct _SCSI_PASS_THROUGH {
     ULONG_PTR DataBufferOffset;
     ULONG     SenseInfoOffset;
     UCHAR     Cdb[16];
-} SCSI_PASS_THROUGH, *PSCSI_PASS_THROUGH;
+} SCSI_PASS_THROUGH, * PSCSI_PASS_THROUGH;
 
 #define REVERSE_BYTES_SHORT( x ) ( ((x & 0xFF) << 8) | ((x & 0xFF00) >> 8))
 #define REVERSE_BYTES_LONG( x ) ( ((x & 0xFF) << 24) | ((x & 0xFF00) << 8) | ((x & 0xFF0000) >> 8) | ((x & 0xFF000000) >> 24))
@@ -133,22 +133,22 @@ typedef struct _SCSI_PASS_THROUGH {
               L"- get-physicaldisk | ft deviceid,friendlyname\n\n"\
               L"Long form \\\\.\\PhysicalDriveXX is also allowed\n\n"
 
-void error(int exit, WCHAR *msg, ...) {
+void error(int exit, WCHAR* msg, ...) {
     va_list valist;
-    WCHAR vaBuff[1024]={L'\0'};
-    WCHAR errBuff[1024]={L'\0'};
+    WCHAR vaBuff[1024] = { L'\0' };
+    WCHAR errBuff[1024] = { L'\0' };
     DWORD err;
 
-    err=GetLastError();
+    err = GetLastError();
 
     va_start(valist, msg);
-    _vsnwprintf_s(vaBuff, sizeof(vaBuff), sizeof(vaBuff), msg, valist);
+    vswprintf(vaBuff, sizeof(vaBuff)/sizeof(WCHAR), msg, valist);
     va_end(valist);
 
-    wprintf(L"%s: %s\n", (exit) ? L"ERROR":L"WARNING", vaBuff);
+    wprintf(L"%s: %s\n", (exit) ? L"ERROR" : L"WARNING", vaBuff);
 
     if (err) {
-        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errBuff, sizeof(errBuff), NULL);
+        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errBuff, sizeof(errBuff)/sizeof(WCHAR), NULL);
         wprintf(L"[0x%08X] %s\n\n", err, errBuff);
     }
     else {
@@ -157,16 +157,16 @@ void error(int exit, WCHAR *msg, ...) {
 
     FlushFileBuffers(GetStdHandle(STD_OUTPUT_HANDLE));
 
-    if(exit)
+    if (exit)
         ExitProcess(1);
 }
 
-int wmain(int argc, WCHAR *argv[]) {
+int wmain(int argc, WCHAR* argv[]) {
     HANDLE              hDisk;
     WCHAR               DevName[64] = { '\0' };
     OVERLAPPED          Ovr = { 0 };
     WCHAR               TestBuff[512] = { '\0' };
-    WCHAR               *DiskNo;
+    WCHAR*              DiskNo = NULL;
     DWORD               y = 0;
     wint_t              p;
     PSCSI_PASS_THROUGH  ScsiPass;
@@ -210,10 +210,13 @@ int wmain(int argc, WCHAR *argv[]) {
         error(1, L"Wrong number of parameters [argc=%d]\n\n%s\n", argc, USAGE);
     }
 
-    if (_wcsnicmp(DiskNo, L"\\\\.\\PhysicalDrive", wcslen(L"\\\\.\\PhysicalDrive")) == 0)
-        wcsncpy_s(DevName, sizeof(DevName), DiskNo, sizeof(DevName));
-    else if (iswdigit(DiskNo[0]))
-        _snwprintf_s(DevName, sizeof(DevName) / sizeof(WCHAR), sizeof(DevName), L"\\\\.\\PhysicalDrive%s", DiskNo);
+    if (DiskNo == NULL)
+        error(1, L"DiskNo is empty\n");
+
+    if (wcsnicmp(DiskNo, L"\\\\.\\PhysicalDrive", 17) == 0)
+        wcsncpy(DevName, DiskNo, sizeof(DevName)/sizeof(WCHAR));
+    else if (iswdigit(*DiskNo))
+        swprintf(DevName, sizeof(DevName) / sizeof(WCHAR), L"\\\\.\\PhysicalDrive%s", DiskNo);
     else
         error(1, USAGE, argv[0]);
 
@@ -229,21 +232,20 @@ int wmain(int argc, WCHAR *argv[]) {
     if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), &desc_h, sizeof(desc_h), &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Device Property [%d] ", BytesRet);
 
-    desc_d = malloc(desc_h.Size);
-    ZeroMemory(desc_d, desc_h.Size);
+    desc_d = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, desc_h.Size);
 
     if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), desc_d, desc_h.Size, &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY [%d] ", BytesRet);
 
     wprintf(L"Disk: %s\nSize: %.1f GB \n", DiskNo, (float)DiskLengthInfo.Length.QuadPart / 1024.0 / 1024.0 / 1024.0);
 
-    if(desc_d->Version == sizeof(STORAGE_DEVICE_DESCRIPTOR)) 
-        printf("Type: %s %s\n", 
-                    (desc_d->VendorIdOffset) ? (char*)desc_d+desc_d->VendorIdOffset : "n/a", 
-                    (desc_d+desc_d->ProductIdOffset) ? (char*)desc_d+desc_d->ProductIdOffset : "n/a"
+    if (desc_d->Version == sizeof(STORAGE_DEVICE_DESCRIPTOR))
+        wprintf(L"Type: %S %S\n",
+            (desc_d->VendorIdOffset) ? (char*)desc_d + desc_d->VendorIdOffset : "n/a",
+            (desc_d + desc_d->ProductIdOffset) ? (char*)desc_d + desc_d->ProductIdOffset : "n/a"
         );
 
-    if(trim_d.Version == sizeof(DEVICE_TRIM_DESCRIPTOR) && trim_d.TrimEnabled == 1)
+    if (trim_d.Version == sizeof(DEVICE_TRIM_DESCRIPTOR) && trim_d.TrimEnabled == 1)
         wprintf(L"Trim: Supported\n");
     else
         wprintf(L"Trim: Not Supported\n");
@@ -251,9 +253,9 @@ int wmain(int argc, WCHAR *argv[]) {
 
     if (!y) {
         wprintf(L"\n"
-                L"WARNING: Contents of your drive an all data will be permanently erased! \n"
-                L"There is no possibility of data recovery even with 3rd party companies.\n\n"  
-                L"Do you want to erase this disk (y/N) ? ");
+            L"WARNING: Contents of your drive an all data will be permanently erased! \n"
+            L"There is no possibility of data recovery even with 3rd party companies.\n\n"
+            L"Do you want to erase this disk (y/N) ? ");
         p = getwchar();
         if (p == L'y')
             wprintf(L"All right...\n");
@@ -270,8 +272,7 @@ int wmain(int argc, WCHAR *argv[]) {
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
 
-    Buffer = malloc(BufLen);
-    ZeroMemory(Buffer, BufLen);
+    Buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
 
     (PVOID)ScsiPass = Buffer;
 
@@ -302,14 +303,14 @@ int wmain(int argc, WCHAR *argv[]) {
     DiskLbaCount = REVERSE_BYTES_LONG64(pReadCapacity->LBA);
     DiskBlockSize = REVERSE_BYTES_LONG(pReadCapacity->BlockLength);
 
-    wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB\n", DevName, DiskLbaCount, DiskBlockSize, (float)(((float)DiskLbaCount*(float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0));
+    wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB\n", DevName, DiskLbaCount, DiskBlockSize, (float)(((float)DiskLbaCount * (float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0));
 
-    free(Buffer);
+    HeapFree(GetProcessHeap(), 0, Buffer);
 
     // There is no going back after this...
-    #ifdef SAFE
+#ifdef SAFE
     return 0;
-    #endif
+#endif
 
     //
     // Uninitialize disk so it doesn't have any partitions in order for pass through to work
@@ -327,7 +328,7 @@ int wmain(int argc, WCHAR *argv[]) {
     Ovr.OffsetHigh = 0;
 
     ZeroMemory(TestBuff, sizeof(TestBuff));
-    _snwprintf_s(TestBuff, sizeof(TestBuff) / sizeof(WCHAR), sizeof(TestBuff), TEST_PATTERN);
+    swprintf(TestBuff, sizeof(TestBuff) / sizeof(WCHAR), TEST_PATTERN);
 
     if (!WriteFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
         error(1, L"Error writing test pattern to disk");
@@ -353,8 +354,7 @@ int wmain(int argc, WCHAR *argv[]) {
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
 
-    Buffer = malloc(BufLen);
-    ZeroMemory(Buffer, BufLen);
+    Buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
 
     (PVOID)ScsiPass = Buffer;
 
