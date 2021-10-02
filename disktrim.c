@@ -142,13 +142,13 @@ void error(int exit, WCHAR* msg, ...) {
     err = GetLastError();
 
     va_start(valist, msg);
-    vswprintf(vaBuff, sizeof(vaBuff)/sizeof(WCHAR), msg, valist);
+    vswprintf(vaBuff, ARRAYSIZE(vaBuff), msg, valist);
     va_end(valist);
 
     wprintf(L"%s: %s\n", (exit) ? L"ERROR" : L"WARNING", vaBuff);
 
     if (err) {
-        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errBuff, sizeof(errBuff)/sizeof(WCHAR), NULL);
+        FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, NULL, err, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), errBuff, ARRAYSIZE(errBuff), NULL);
         wprintf(L"[0x%08X] %s\n\n", err, errBuff);
     }
     else {
@@ -214,9 +214,9 @@ int wmain(int argc, WCHAR* argv[]) {
         error(1, L"DiskNo is empty\n");
 
     if (wcsnicmp(DiskNo, L"\\\\.\\PhysicalDrive", 17) == 0)
-        wcsncpy(DevName, DiskNo, sizeof(DevName)/sizeof(WCHAR));
+        wcsncpy(DevName, DiskNo, ARRAYSIZE(DevName));
     else if (iswdigit(*DiskNo))
-        swprintf(DevName, sizeof(DevName) / sizeof(WCHAR), L"\\\\.\\PhysicalDrive%s", DiskNo);
+        swprintf(DevName, ARRAYSIZE(DevName), L"\\\\.\\PhysicalDrive%s", DiskNo);
     else
         error(1, USAGE, argv[0]);
 
@@ -328,7 +328,7 @@ int wmain(int argc, WCHAR* argv[]) {
     Ovr.OffsetHigh = 0;
 
     ZeroMemory(TestBuff, sizeof(TestBuff));
-    swprintf(TestBuff, sizeof(TestBuff) / sizeof(WCHAR), TEST_PATTERN);
+    swprintf(TestBuff, ARRAYSIZE(TestBuff), TEST_PATTERN);
 
     if (!WriteFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
         error(1, L"Error writing test pattern to disk");
