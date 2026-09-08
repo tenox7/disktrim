@@ -1,16 +1,16 @@
 @echo off
 setlocal enabledelayedexpansion
 
-rem NOTE: intentionally NOT named "VSINSTALLDIR" -- VS's own scripts assume that name already has a trailing
-rem backslash (they normally set it themselves) and corrupt every path built from it downstream if it's pre-set.
+rem This is intentionally NOT named "VSINSTALLDIR"; VS's own scripts assume that name already has a trailing backslash
+rem (they normally set it themselves) and corrupt every path built from it downstream if it's pre-set.
 for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath 2^>nul`) do (
     set "_DISKTRIM_VS_PATH=%%i"
 )
 
 if not defined _DISKTRIM_VS_PATH (
     echo ERROR: Could not locate a Visual Studio installation with the x86/x64 AND ARM64 C++ build tools.
-    echo Make sure the "Desktop development with C++" workload is installed, along with its
-    echo "MSVC ... ARM64/ARM64EC build tools" optional component.
+    echo Make sure the "Desktop development with C++" workload is installed, along with its "MSVC ... ARM64/ARM64EC
+    echo build tools" optional component.
     pause
     exit /b 1
 )
@@ -23,10 +23,10 @@ if not exist "%_VCVARSALL%" (
     exit /b 1
 )
 
-rem Pin the build to an installed Windows 11 SDK (build 22000+) rather than letting "vcvarsall.bat" silently fall
-rem back to an older Windows 10 SDK when several are installed side by side. Only accept a version that has both
-rem its headers AND its import libraries present -- an Include-only folder (e.g. a partially installed or leftover
-rem Insider/preview SDK) will find <windows.h> but then fail deeper inside it, or fail at link time.
+rem Pin the build to an installed Windows 11 SDK (build 22000+) rather than letting "vcvarsall.bat" silently fall back
+rem to an older Windows 10 SDK when several are installed side by side. Only accept a version that has both its headers
+rem AND its import libraries present -- an Include-only folder (e.g. a partially installed or leftover Insider / preview
+rem SDK) will find <windows.h> but then fail deeper inside it, or fail at link time.
 set "_SDK_INCLUDE_ROOT=%ProgramFiles(x86)%\Windows Kits\10\Include"
 set "_SDK_LIB_ROOT=%ProgramFiles(x86)%\Windows Kits\10\Lib"
 set "_DISKTRIM_WIN11_SDK_VERSION="
@@ -43,13 +43,13 @@ if exist "%_SDK_INCLUDE_ROOT%" (
                             if exist "%_SDK_LIB_ROOT%\%%v\um\arm64\kernel32.lib" (
                                 set "_DISKTRIM_WIN11_SDK_VERSION=%%v"
                             ) else (
-                                echo Skipping incomplete SDK %%v ^(missing um\arm64\kernel32.lib -- install the ARM64 build tools^)
+                                echo Skipping incomplete SDK %%v ^(missing "um\arm64\kernel32.lib" in Lib; Install the ARM64 build tools^)
                             )
                         ) else (
-                            echo Skipping incomplete SDK %%v ^(missing um\x86\kernel32.lib in Lib^)
+                            echo Skipping incomplete SDK %%v ^(missing "um\x86\kernel32.lib" in Lib^)
                         )
                     ) else (
-                        echo Skipping incomplete SDK %%v ^(missing um\x64\kernel32.lib in Lib^)
+                        echo Skipping incomplete SDK %%v ^(missing "um\x64\kernel32.lib" in Lib^)
                     )
                 )
             )
@@ -66,8 +66,8 @@ if not defined _DISKTRIM_WIN11_SDK_VERSION (
     exit /b 1
 )
 
-echo Using Visual Studio at %_DISKTRIM_VS_PATH%
-echo Using Windows 11 SDK %_DISKTRIM_WIN11_SDK_VERSION%
+echo Using Visual Studio at "%_DISKTRIM_VS_PATH%"
+echo Using Windows 11 SDK v%_DISKTRIM_WIN11_SDK_VERSION%
 
 set INCLUDE=
 set LIB=
