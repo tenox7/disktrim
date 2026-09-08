@@ -3,13 +3,14 @@ setlocal enabledelayedexpansion
 
 rem NOTE: intentionally NOT named "VSINSTALLDIR" -- VS's own scripts assume that name already has a trailing
 rem backslash (they normally set it themselves) and corrupt every path built from it downstream if it's pre-set.
-for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2^>nul`) do (
+for /f "usebackq tokens=*" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath 2^>nul`) do (
     set "_DISKTRIM_VS_PATH=%%i"
 )
 
 if not defined _DISKTRIM_VS_PATH (
-    echo ERROR: Could not locate a Visual Studio installation with the C++ build tools.
-    echo Make sure the "Desktop development with C++" workload is installed.
+    echo ERROR: Could not locate a Visual Studio installation with the x86/x64 AND ARM64 C++ build tools.
+    echo Make sure the "Desktop development with C++" workload is installed, along with its
+    echo "MSVC ... ARM64/ARM64EC build tools" optional component.
     pause
     exit /b 1
 )
