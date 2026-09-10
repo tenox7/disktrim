@@ -109,8 +109,14 @@ typedef struct _SCSI_PASS_THROUGH {
 #define REVERSE_BYTES_LONG( x ) ( ((x & 0xFF) << 24) | ((x & 0xFF00) << 8) | ((x & 0xFF0000) >> 8) | ((x & 0xFF000000) >> 24))
 #define REVERSE_BYTES_LONG64( x ) ( ((x & 0xFF) << 56) | ((x & 0xFF00) << 40) | ((x & 0xFF0000) << 24) | ((x & 0xFF000000) << 8) | ((x & 0xFF00000000) >> 8) | ((x & 0xFF0000000000) >> 24) | ((x & 0xFF000000000000) >> 40) | ((x & 0xFF00000000000000) >> 56) )
 
-#define SRB_FLAGS_DATA_IN                   0x00000040
-#define SRB_FLAGS_DATA_OUT                  0x00000080
+//
+// Data direction for SCSI_PASS_THROUGH.DataIn. These are NOT the
+// SRB_FLAGS_DATA_* flags -- an SRB flag in this field is rejected by
+// the port driver and the request fails with ERROR_IO_DEVICE (0x45D)
+// before it ever reaches the device.
+//
+#define SCSI_IOCTL_DATA_OUT                 0
+#define SCSI_IOCTL_DATA_IN                  1
 
 #define IOCTL_SCSI_BASE                     0x00000004
 #define IOCTL_SCSI_PASS_THROUGH             CTL_CODE(IOCTL_SCSI_BASE, 0x0401, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
@@ -268,7 +274,7 @@ int wmain(int argc, WCHAR* argv[]) {
     //
     wprintf(L"Querying drive parameters...\n");
 
-    TransferSize = 36;
+    TransferSize = sizeof(READ_CAPACITY16);
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
 
@@ -283,7 +289,7 @@ int wmain(int argc, WCHAR* argv[]) {
     ScsiPass->CdbLength = 16;
     ScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
     ScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->DataIn = SRB_FLAGS_DATA_IN;
+    ScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
     ScsiPass->TimeOutValue = 5000;
     ScsiPass->DataTransferLength = TransferSize;
     ScsiPass->DataBufferOffset = ScsiPass->SenseInfoOffset + ScsiPass->SenseInfoLength;
@@ -293,6 +299,10 @@ int wmain(int argc, WCHAR* argv[]) {
     (PVOID)pCDB16 = ScsiPass->Cdb;
     pCDB16->OperationCode = 0x9E;
     pCDB16->ServiceAction = 0x10;
+    pCDB16->AllocationLength[0] = (UCHAR)(TransferSize >> 24);
+    pCDB16->AllocationLength[1] = (UCHAR)(TransferSize >> 16);
+    pCDB16->AllocationLength[2] = (UCHAR)(TransferSize >> 8);
+    pCDB16->AllocationLength[3] = (UCHAR)TransferSize;
 
     (PVOID)pReadCapacity = (PUCHAR)Buffer + ScsiPass->DataBufferOffset;
 
@@ -365,7 +375,7 @@ int wmain(int argc, WCHAR* argv[]) {
     ScsiPass->CdbLength = 10;
     ScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
     ScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->DataIn = SRB_FLAGS_DATA_OUT;
+    ScsiPass->DataIn = SCSI_IOCTL_DATA_OUT;
     ScsiPass->TimeOutValue = 5000;
     ScsiPass->DataTransferLength = TransferSize;
     ScsiPass->DataBufferOffset = sizeof(SCSI_PASS_THROUGH) + ScsiPass->SenseInfoLength;
