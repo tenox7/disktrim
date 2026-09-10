@@ -1,0 +1,9 @@
+# MSVC build output (build.cmd)
+*.exe
+*.obj
+*.res
+
+# MSVC debug/link intermediates
+*.pdb
+*.ilk
+*.idb
