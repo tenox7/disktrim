@@ -4,11 +4,11 @@ Utility for Microsoft Windows that allows you to send TRIM / UNMAP / DISCARD com
 
 # WARNING:
 This utility is very dangerous and will irreversibly destroy all your data.
-Once the operation is performed, the contents of the SSD are unrecoverable in any way.
+Once the operation is performed, the data contents of the SSD are unrecoverable in any way.
 The authors of this software application take absolutely no
 responsibility for use of this program and its consequences.
 
 ## Legal
-Copyright (c) 2016 by Antoni Sawicki and Tomasz Nowak
+Copyright (c) 2016-2026 by Antoni Sawicki and Tomasz Nowak
 
 License: Apache 2.0
