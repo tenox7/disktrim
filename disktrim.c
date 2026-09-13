@@ -19,107 +19,16 @@
 // responsibility for use of this program  and its consequences.
 //
 #include <windows.h>
+#include <ntddscsi.h>
+#define _NTSCSI_USER_MODE_
+#include <scsi.h>
+#undef _NTSCSI_USER_MODE_
 #include <stdio.h>
 #include <stdlib.h>
 #include <wchar.h>
 #include <stdarg.h>
 
 //#define SAFE
-
-#pragma pack(1)
-
-typedef struct _CDB_10 {
-    UCHAR       OperationCode;    // 0x42 - SCSIOP_UNMAP
-    UCHAR       Anchor : 1;
-    UCHAR       Reserved1 : 7;
-    UCHAR       Reserved2[4];
-    UCHAR       GroupNumber : 5;
-    UCHAR       Reserved3 : 3;
-    UCHAR       AllocationLength[2];
-    UCHAR       Control;
-} CDB_10, * PCDB_10;
-
-typedef struct _CDB_16 {
-    UCHAR       OperationCode;
-    UCHAR       ServiceAction : 5;
-    UCHAR       Reserved1 : 3;
-    UCHAR       LBA[8];
-    UCHAR       AllocationLength[4];
-    UCHAR       PMI : 1;
-    UCHAR       Reserved2 : 7;
-    UCHAR       Control;
-} CDB_16, * PCDB_16;
-
-
-typedef struct _UNMAP_BLOCK_DESCRIPTOR {
-    ULONG64 StartingLba;
-    ULONG LbaCount;
-    UCHAR Reserved[4];
-} UNMAP_BLOCK_DESCRIPTOR, * PUNMAP_BLOCK_DESCRIPTOR;
-
-typedef struct _UNMAP_LIST_HEADER {
-    USHORT DataLength;
-    USHORT BlockDescrDataLength;
-    UCHAR Reserved[4];
-    UNMAP_BLOCK_DESCRIPTOR Descriptors[0];
-} UNMAP_LIST_HEADER, * PUNMAP_LIST_HEADER;
-
-
-typedef struct _READ_CAPACITY10 {
-    ULONG       LBA;
-    ULONG       BlockLength;
-} READ_CAPACITY10, * PREAD_CAPACITY10;
-
-typedef struct _READ_CAPACITY16 {
-    ULONG64     LBA;
-    ULONG       BlockLength;
-    UCHAR       ProtEn : 1;
-    UCHAR       PType : 3;
-    UCHAR       Reserved1 : 4;
-    UCHAR       LBPerPBExp : 4;
-    UCHAR       PIExp : 4;
-    UCHAR       MSB : 6;
-    UCHAR       TPRZ : 1;
-    UCHAR       TPE : 1;
-    UCHAR       LSB;
-    UCHAR       Reserved2[16];
-
-} READ_CAPACITY16, * PREAD_CAPACITY16;
-
-#pragma pack()
-
-
-typedef struct _SCSI_PASS_THROUGH {
-    USHORT    Length;
-    UCHAR     ScsiStatus;
-    UCHAR     PathId;
-    UCHAR     TargetId;
-    UCHAR     Lun;
-    UCHAR     CdbLength;
-    UCHAR     SenseInfoLength;
-    UCHAR     DataIn;
-    ULONG     DataTransferLength;
-    ULONG     TimeOutValue;
-    ULONG_PTR DataBufferOffset;
-    ULONG     SenseInfoOffset;
-    UCHAR     Cdb[16];
-} SCSI_PASS_THROUGH, * PSCSI_PASS_THROUGH;
-
-#define REVERSE_BYTES_SHORT( x ) ( ((x & 0xFF) << 8) | ((x & 0xFF00) >> 8))
-#define REVERSE_BYTES_LONG( x ) ( ((x & 0xFF) << 24) | ((x & 0xFF00) << 8) | ((x & 0xFF0000) >> 8) | ((x & 0xFF000000) >> 24))
-#define REVERSE_BYTES_LONG64( x ) ( ((x & 0xFF) << 56) | ((x & 0xFF00) << 40) | ((x & 0xFF0000) << 24) | ((x & 0xFF000000) << 8) | ((x & 0xFF00000000) >> 8) | ((x & 0xFF0000000000) >> 24) | ((x & 0xFF000000000000) >> 40) | ((x & 0xFF00000000000000) >> 56) )
-
-//
-// Data direction for SCSI_PASS_THROUGH.DataIn. These are NOT the
-// SRB_FLAGS_DATA_* flags -- an SRB flag in this field is rejected by
-// the port driver and the request fails with ERROR_IO_DEVICE (0x45D)
-// before it ever reaches the device.
-//
-#define SCSI_IOCTL_DATA_OUT                 0
-#define SCSI_IOCTL_DATA_IN                  1
-
-#define IOCTL_SCSI_BASE                     0x00000004
-#define IOCTL_SCSI_PASS_THROUGH             CTL_CODE(IOCTL_SCSI_BASE, 0x0401, METHOD_BUFFERED, FILE_READ_ACCESS | FILE_WRITE_ACCESS)
 
 #define SENSE_INFO_LENGTH                   128
 
@@ -175,7 +84,7 @@ int wmain(int argc, WCHAR* argv[]) {
     WCHAR*              DiskNo = NULL;
     DWORD               y = 0;
     wint_t              p;
-    PSCSI_PASS_THROUGH  ScsiPass;
+    PSCSI_PASS_THROUGH  pScsiPass;
     GET_LENGTH_INFORMATION  DiskLengthInfo;
     STORAGE_PROPERTY_QUERY trim_q = { StorageDeviceTrimProperty,  PropertyStandardQuery };
     DEVICE_TRIM_DESCRIPTOR trim_d = { 0 };
@@ -185,17 +94,19 @@ int wmain(int argc, WCHAR* argv[]) {
     PVOID               Buffer;
     ULONG               BufLen;
     ULONG               TransferSize;
-    PCDB_10             pCDB;
-    PCDB_16             pCDB16;
+    PCDB                pCdb;
+    PCDB                pCdb16;
     PUNMAP_LIST_HEADER  pUnmapHdr;
     ULONG               BytesRet;
     PUCHAR              pSenseCode;
-    PREAD_CAPACITY16    pReadCapacity;
+    PREAD_CAPACITY16_DATA pReadCapacity;
     ULONG               DiskBlockSize;
     ULONG64             DiskLbaCount;
     ULONG               UnmapEntryCount;
     ULONG               i;
-    ULONG64             LBAStart, LBACount;
+    ULONG64             LbaStart, LbaCount;
+    USHORT              TransferSizeAsUShort;
+    ULONG               LbaCountAsULong;
 
 
     wprintf(L"DiskTrim v2.2 by Antoni Sawicki & Tomasz Nowak, Build %s %s\n\n", __WDATE__, __WTIME__);
@@ -274,44 +185,41 @@ int wmain(int argc, WCHAR* argv[]) {
     //
     wprintf(L"Querying drive parameters...\n");
 
-    TransferSize = sizeof(READ_CAPACITY16);
+    TransferSize = sizeof(READ_CAPACITY16_DATA);
 
     BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
 
     Buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
 
-    (PVOID)ScsiPass = Buffer;
+    (PVOID)pScsiPass = Buffer;
 
-    ScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->TargetId = 1;
-    ScsiPass->PathId = 0;
-    ScsiPass->Lun = 0;
-    ScsiPass->CdbLength = 16;
-    ScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
-    ScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
-    ScsiPass->TimeOutValue = 5000;
-    ScsiPass->DataTransferLength = TransferSize;
-    ScsiPass->DataBufferOffset = ScsiPass->SenseInfoOffset + ScsiPass->SenseInfoLength;
+    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->TargetId = 1;
+    pScsiPass->PathId = 0;
+    pScsiPass->Lun = 0;
+    pScsiPass->CdbLength = 16;
+    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
+    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
+    pScsiPass->TimeOutValue = 5000;
+    pScsiPass->DataTransferLength = TransferSize;
+    pScsiPass->DataBufferOffset = pScsiPass->SenseInfoOffset + pScsiPass->SenseInfoLength;
 
-    pSenseCode = (PUCHAR)Buffer + ScsiPass->SenseInfoOffset;
+    pSenseCode = (PUCHAR)Buffer + pScsiPass->SenseInfoOffset;
 
-    (PVOID)pCDB16 = ScsiPass->Cdb;
-    pCDB16->OperationCode = 0x9E;
-    pCDB16->ServiceAction = 0x10;
-    pCDB16->AllocationLength[0] = (UCHAR)(TransferSize >> 24);
-    pCDB16->AllocationLength[1] = (UCHAR)(TransferSize >> 16);
-    pCDB16->AllocationLength[2] = (UCHAR)(TransferSize >> 8);
-    pCDB16->AllocationLength[3] = (UCHAR)TransferSize;
+    (PVOID)pCdb16 = pScsiPass->Cdb;
+    pCdb16->READ_CAPACITY16.OperationCode = SCSIOP_READ_CAPACITY16;
+    pCdb16->READ_CAPACITY16.ServiceAction = SERVICE_ACTION_READ_CAPACITY16;
+    REVERSE_BYTES(pCdb16->READ_CAPACITY16.AllocationLength, &TransferSize);
 
-    (PVOID)pReadCapacity = (PUCHAR)Buffer + ScsiPass->DataBufferOffset;
+    (PVOID)pReadCapacity = (PUCHAR)Buffer + pScsiPass->DataBufferOffset;
 
 
     if (!DeviceIoControl(hDisk, IOCTL_SCSI_PASS_THROUGH, Buffer, BufLen, Buffer, BufLen, &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_SCSI_PASS_THROUGH");
 
-    DiskLbaCount = REVERSE_BYTES_LONG64(pReadCapacity->LBA);
-    DiskBlockSize = REVERSE_BYTES_LONG(pReadCapacity->BlockLength);
+    REVERSE_BYTES_QUAD(&DiskLbaCount, &pReadCapacity->LogicalBlockAddress);
+    REVERSE_BYTES(&DiskBlockSize, &pReadCapacity->BytesPerBlock);
 
     wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB\n", DevName, DiskLbaCount, DiskBlockSize, (float)(((float)DiskLbaCount * (float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0));
 
@@ -366,45 +274,48 @@ int wmain(int argc, WCHAR* argv[]) {
 
     Buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
 
-    (PVOID)ScsiPass = Buffer;
+    (PVOID)pScsiPass = Buffer;
 
-    ScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->TargetId = 1;
-    ScsiPass->PathId = 0;
-    ScsiPass->Lun = 0;
-    ScsiPass->CdbLength = 10;
-    ScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
-    ScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    ScsiPass->DataIn = SCSI_IOCTL_DATA_OUT;
-    ScsiPass->TimeOutValue = 5000;
-    ScsiPass->DataTransferLength = TransferSize;
-    ScsiPass->DataBufferOffset = sizeof(SCSI_PASS_THROUGH) + ScsiPass->SenseInfoLength;
+    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->TargetId = 1;
+    pScsiPass->PathId = 0;
+    pScsiPass->Lun = 0;
+    pScsiPass->CdbLength = 10;
+    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
+    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->DataIn = SCSI_IOCTL_DATA_OUT;
+    pScsiPass->TimeOutValue = 5000;
+    pScsiPass->DataTransferLength = TransferSize;
+    pScsiPass->DataBufferOffset = sizeof(SCSI_PASS_THROUGH) + pScsiPass->SenseInfoLength;
 
-    pSenseCode = (PUCHAR)Buffer + ScsiPass->SenseInfoOffset;
+    pSenseCode = (PUCHAR)Buffer + pScsiPass->SenseInfoOffset;
 
-    (PVOID)pCDB = ScsiPass->Cdb;
-    pCDB->OperationCode = 0x42;
-    pCDB->Anchor = 0;
-    pCDB->GroupNumber = 0;
-    pCDB->AllocationLength[0] = (UCHAR)(TransferSize >> 8);
-    pCDB->AllocationLength[1] = (UCHAR)TransferSize;
+    (PVOID)pCdb = pScsiPass->Cdb;
+    pCdb->UNMAP.OperationCode = SCSIOP_UNMAP;
+    pCdb->UNMAP.Anchor = 0;
+    pCdb->UNMAP.GroupNumber = 0;
+    TransferSizeAsUShort = (USHORT)TransferSize;
+    REVERSE_BYTES_SHORT(pCdb->UNMAP.AllocationLength, &TransferSizeAsUShort);
 
-    (PVOID)pUnmapHdr = (PUCHAR)ScsiPass + ScsiPass->DataBufferOffset;
+    (PVOID)pUnmapHdr = (PUCHAR)pScsiPass + pScsiPass->DataBufferOffset;
 
-    pUnmapHdr->DataLength = REVERSE_BYTES_SHORT(TransferSize - 2);
-    pUnmapHdr->BlockDescrDataLength = REVERSE_BYTES_SHORT(TransferSize - sizeof(UNMAP_LIST_HEADER));
+    TransferSizeAsUShort = (USHORT)(TransferSize - 2);
+    REVERSE_BYTES_SHORT(pUnmapHdr->DataLength, &TransferSizeAsUShort);
+    TransferSizeAsUShort = (USHORT)(TransferSize - sizeof(UNMAP_LIST_HEADER));
+    REVERSE_BYTES_SHORT(pUnmapHdr->BlockDescrDataLength, &TransferSizeAsUShort);
 
 
-    LBAStart = 0;
-    LBACount = DiskLbaCount + 1;
+    LbaStart = 0;
+    LbaCount = DiskLbaCount + 1;
 
     for (i = 0; i < UnmapEntryCount; i++) {
-        pUnmapHdr->Descriptors[i].StartingLba = REVERSE_BYTES_LONG64(LBAStart);
-        pUnmapHdr->Descriptors[i].LbaCount = REVERSE_BYTES_LONG((ULONG)((LBACount < 0xFFFFFFFF) ? (LBACount & 0xFFFFFFFF) : 0xFFFFFFFF));
+        LbaCountAsULong = (ULONG)((LbaCount < 0xFFFFFFFF) ? (LbaCount & 0xFFFFFFFF) : 0xFFFFFFFF);
+        REVERSE_BYTES_QUAD(pUnmapHdr->Descriptors[i].StartingLba, &LbaStart);
+        REVERSE_BYTES(pUnmapHdr->Descriptors[i].LbaCount, &LbaCountAsULong);
 
-        if (LBACount > 0xFFFFFFFF) {
-            LBACount -= 0xFFFFFFFF;
-            LBAStart += 0xFFFFFFFF;
+        if (LbaCount > 0xFFFFFFFF) {
+            LbaCount -= 0xFFFFFFFF;
+            LbaStart += 0xFFFFFFFF;
         }
     }
 
