@@ -32,6 +32,12 @@
 
 #define SENSE_INFO_LENGTH                   128
 
+//
+// READ CAPACITY 10 carries a 32 bit LBA and saturates at 0xFFFFFFFF
+// when the disk is too large to describe.
+//
+#define READ_CAPACITY10_SATURATED           0xFFFFFFFF
+
 #define TEST_PATTERN                        L"====[Test*Pattern]===="
 
 #define WIDEN2(x) L ## x
@@ -76,6 +82,76 @@ void error(int exit, WCHAR* msg, ...) {
         ExitProcess(1);
 }
 
+//
+// Ask the device for its last LBA and block size.  Returns FALSE if
+// the request fails or the device rejects the command, so the caller
+// can fall back to another source.
+//
+BOOL ScsiReadCapacity(HANDLE hDisk, BOOL Use16, ULONG64* LastLba, ULONG* BlockSize) {
+    PSCSI_PASS_THROUGH  pScsiPass;
+    PCDB                pCdb;
+    PREAD_CAPACITY16_DATA pReply16;
+    PREAD_CAPACITY_DATA pReply10;
+    ULONG               ReplyLen;
+    ULONG               BufLen;
+    ULONG               BytesRet;
+    ULONG               LastLba10;
+    BOOL                Ok;
+
+    ReplyLen = (Use16) ? sizeof(READ_CAPACITY16_DATA) : sizeof(READ_CAPACITY_DATA);
+    BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + ReplyLen;
+
+    pScsiPass = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
+
+    if (pScsiPass == NULL)
+        error(1, L"Cannot allocate %lu bytes for READ CAPACITY", BufLen);
+
+    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->TargetId = 1;
+    pScsiPass->PathId = 0;
+    pScsiPass->Lun = 0;
+    pScsiPass->CdbLength = (Use16) ? 16 : 10;
+    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
+    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
+    pScsiPass->TimeOutValue = 5;
+    pScsiPass->DataTransferLength = ReplyLen;
+    pScsiPass->DataBufferOffset = pScsiPass->SenseInfoOffset + pScsiPass->SenseInfoLength;
+
+    pCdb = (PCDB)pScsiPass->Cdb;
+
+    if (Use16) {
+        pCdb->READ_CAPACITY16.OperationCode = SCSIOP_READ_CAPACITY16;
+        pCdb->READ_CAPACITY16.ServiceAction = SERVICE_ACTION_READ_CAPACITY16;
+        REVERSE_BYTES(pCdb->READ_CAPACITY16.AllocationLength, &ReplyLen);
+    }
+    else {
+        pCdb->CDB10.OperationCode = SCSIOP_READ_CAPACITY;
+    }
+
+    // A rejected command still succeeds here, with the reason in ScsiStatus.
+    Ok = DeviceIoControl(hDisk, IOCTL_SCSI_PASS_THROUGH, pScsiPass, BufLen, pScsiPass, BufLen, &BytesRet, NULL)
+        && pScsiPass->ScsiStatus == 0;
+
+    if (Ok && Use16) {
+        pReply16 = (PREAD_CAPACITY16_DATA)((PUCHAR)pScsiPass + pScsiPass->DataBufferOffset);
+
+        REVERSE_BYTES_QUAD(LastLba, &pReply16->LogicalBlockAddress);
+        REVERSE_BYTES(BlockSize, &pReply16->BytesPerBlock);
+    }
+    else if (Ok) {
+        pReply10 = (PREAD_CAPACITY_DATA)((PUCHAR)pScsiPass + pScsiPass->DataBufferOffset);
+
+        REVERSE_BYTES(&LastLba10, &pReply10->LogicalBlockAddress);
+        REVERSE_BYTES(BlockSize, &pReply10->BytesPerBlock);
+        *LastLba = LastLba10;
+    }
+
+    HeapFree(GetProcessHeap(), 0, pScsiPass);
+
+    return Ok;
+}
+
 int wmain(int argc, WCHAR* argv[]) {
     HANDLE              hDisk;
     WCHAR               DevName[64] = { '\0' };
@@ -86,6 +162,10 @@ int wmain(int argc, WCHAR* argv[]) {
     wint_t              p;
     PSCSI_PASS_THROUGH  pScsiPass;
     GET_LENGTH_INFORMATION  DiskLengthInfo;
+    DISK_GEOMETRY       DiskGeometry = { 0 };
+    ULONG               WinSectorSize;
+    ULONG64             WinLbaTotal;
+    WCHAR*              CapacitySource;
     STORAGE_PROPERTY_QUERY trim_q = { StorageDeviceTrimProperty,  PropertyStandardQuery };
     DEVICE_TRIM_DESCRIPTOR trim_d = { 0 };
     STORAGE_PROPERTY_QUERY desc_q = { StorageDeviceProperty,  PropertyStandardQuery };
@@ -95,11 +175,9 @@ int wmain(int argc, WCHAR* argv[]) {
     ULONG               BufLen;
     ULONG               TransferSize;
     PCDB                pCdb;
-    PCDB                pCdb16;
     PUNMAP_LIST_HEADER  pUnmapHdr;
     ULONG               BytesRet;
     PUCHAR              pSenseCode;
-    PREAD_CAPACITY16_DATA pReadCapacity;
     ULONG               DiskBlockSize;
     ULONG64             DiskLbaCount;
     ULONG               UnmapEntryCount;
@@ -185,45 +263,43 @@ int wmain(int argc, WCHAR* argv[]) {
     //
     wprintf(L"Querying drive parameters...\n");
 
-    TransferSize = sizeof(READ_CAPACITY16_DATA);
+    if (!DeviceIoControl(hDisk, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &DiskGeometry, sizeof(DiskGeometry), &BytesRet, NULL))
+        error(1, L"Error on DeviceIoControl IOCTL_DISK_GET_DRIVE_GEOMETRY [%d] ", BytesRet);
 
-    BufLen = sizeof(SCSI_PASS_THROUGH) + SENSE_INFO_LENGTH + TransferSize;
+    WinSectorSize = DiskGeometry.BytesPerSector;
+    WinLbaTotal = (ULONG64)DiskLengthInfo.Length.QuadPart / WinSectorSize;
 
-    Buffer = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, BufLen);
+    //
+    // UNMAP addresses the device's LBA space, so prefer the device's
+    // own answer.  Fall back to READ CAPACITY 10 when READ CAPACITY 16
+    // is rejected, and to Windows' geometry when neither answers or
+    // READ CAPACITY 10 is saturated.
+    //
+    if (ScsiReadCapacity(hDisk, TRUE, &DiskLbaCount, &DiskBlockSize)) {
+        CapacitySource = L"READ CAPACITY 16";
+    }
+    else if (ScsiReadCapacity(hDisk, FALSE, &DiskLbaCount, &DiskBlockSize)
+        && DiskLbaCount != READ_CAPACITY10_SATURATED) {
+        CapacitySource = L"READ CAPACITY 10";
+    }
+    else {
+        if (WinLbaTotal == 0)
+            error(1, L"Neither the device nor Windows reports a usable capacity");
 
-    (PVOID)pScsiPass = Buffer;
+        DiskLbaCount = WinLbaTotal - 1;
+        DiskBlockSize = WinSectorSize;
+        CapacitySource = L"Windows geometry";
+    }
 
-    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->TargetId = 1;
-    pScsiPass->PathId = 0;
-    pScsiPass->Lun = 0;
-    pScsiPass->CdbLength = 16;
-    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
-    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
-    pScsiPass->TimeOutValue = 5000;
-    pScsiPass->DataTransferLength = TransferSize;
-    pScsiPass->DataBufferOffset = pScsiPass->SenseInfoOffset + pScsiPass->SenseInfoLength;
+    if (DiskBlockSize == 0 || DiskLbaCount == 0)
+        error(1, L"Unusable capacity from %s: last LBA %I64u, block %lu bytes", CapacitySource, DiskLbaCount, DiskBlockSize);
 
-    pSenseCode = (PUCHAR)Buffer + pScsiPass->SenseInfoOffset;
+    if (DiskLbaCount + 1 != WinLbaTotal || DiskBlockSize != WinSectorSize)
+        error(0, L"Capacity disagreement: device says %I64u blocks of %lu bytes, Windows says %I64u of %lu",
+            DiskLbaCount + 1, DiskBlockSize, WinLbaTotal, WinSectorSize);
 
-    (PVOID)pCdb16 = pScsiPass->Cdb;
-    pCdb16->READ_CAPACITY16.OperationCode = SCSIOP_READ_CAPACITY16;
-    pCdb16->READ_CAPACITY16.ServiceAction = SERVICE_ACTION_READ_CAPACITY16;
-    REVERSE_BYTES(pCdb16->READ_CAPACITY16.AllocationLength, &TransferSize);
-
-    (PVOID)pReadCapacity = (PUCHAR)Buffer + pScsiPass->DataBufferOffset;
-
-
-    if (!DeviceIoControl(hDisk, IOCTL_SCSI_PASS_THROUGH, Buffer, BufLen, Buffer, BufLen, &BytesRet, NULL))
-        error(1, L"Error on DeviceIoControl IOCTL_SCSI_PASS_THROUGH");
-
-    REVERSE_BYTES_QUAD(&DiskLbaCount, &pReadCapacity->LogicalBlockAddress);
-    REVERSE_BYTES(&DiskBlockSize, &pReadCapacity->BytesPerBlock);
-
-    wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB\n", DevName, DiskLbaCount, DiskBlockSize, (float)(((float)DiskLbaCount * (float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0));
-
-    HeapFree(GetProcessHeap(), 0, Buffer);
+    wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB [via %s]\n", DevName, DiskLbaCount, DiskBlockSize,
+        (float)(((float)(DiskLbaCount + 1) * (float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0), CapacitySource);
 
     // There is no going back after this...
 #ifdef SAFE
