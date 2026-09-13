@@ -86,6 +86,25 @@ void error(int exit, WCHAR* msg, ...) {
 }
 
 //
+// DeviceIoControl returning TRUE only means the request reached the
+// device.  The device can still reject the command with CHECK
+// CONDITION in ScsiStatus and the reason in the sense data.
+//
+BOOL ScsiPassRejected(PSCSI_PASS_THROUGH pScsiPass, WCHAR* What) {
+    PUCHAR              pSense;
+
+    if (pScsiPass->ScsiStatus == 0)
+        return FALSE;
+
+    pSense = (PUCHAR)pScsiPass + pScsiPass->SenseInfoOffset;
+
+    error(0, L"%s rejected by device: SCSI status 0x%02X, sense key 0x%02X, ASC 0x%02X, ASCQ 0x%02X",
+        What, pScsiPass->ScsiStatus, pSense[2] & 0x0F, pSense[12], pSense[13]);
+
+    return TRUE;
+}
+
+//
 // Ask the device for its last LBA and block size.  Returns FALSE if
 // the request fails or the device rejects the command, so the caller
 // can fall back to another source.
@@ -411,6 +430,9 @@ int wmain(int argc, WCHAR* argv[]) {
 
     if (!DeviceIoControl(hDisk, IOCTL_SCSI_PASS_THROUGH, Buffer, BufLen, Buffer, BufLen, &BytesRet, NULL))
         error(1, L"Error performing DeviceIoControl IOCTL_SCSI_PASS_THROUGH");
+
+    if (ScsiPassRejected(pScsiPass, L"UNMAP"))
+        error(1, L"The device refused the UNMAP command, nothing was discarded");
 
     ZeroMemory(TestBuff, sizeof(TestBuff));
 
