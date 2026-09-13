@@ -171,12 +171,14 @@ int wmain(int argc, WCHAR* argv[]) {
     HANDLE              hDisk;
     WCHAR               DevName[64] = { '\0' };
     OVERLAPPED          Ovr = { 0 };
-    WCHAR               TestBuff[512] = { '\0' };
+    WCHAR*              TestBuff;
+    ULONG               TestBuffSize;
     WCHAR*              DiskNo = NULL;
     DWORD               y = 0;
     wint_t              p;
     PSCSI_PASS_THROUGH  ScsiPass;
     GET_LENGTH_INFORMATION  DiskLengthInfo;
+    DISK_GEOMETRY       DiskGeometry = { 0 };
     STORAGE_PROPERTY_QUERY trim_q = { StorageDeviceTrimProperty,  PropertyStandardQuery };
     DEVICE_TRIM_DESCRIPTOR trim_d = { 0 };
     STORAGE_PROPERTY_QUERY desc_q = { StorageDeviceProperty,  PropertyStandardQuery };
@@ -317,6 +319,25 @@ int wmain(int argc, WCHAR* argv[]) {
 
     HeapFree(GetProcessHeap(), 0, Buffer);
 
+    //
+    // The disk was opened with FILE_FLAG_NO_BUFFERING, which requires
+    // a sector aligned buffer and a transfer of whole sectors.  One
+    // WCHAR of slack past the transfer acts as a terminator for
+    // sectors read without a NUL.
+    //
+    if (!DeviceIoControl(hDisk, IOCTL_DISK_GET_DRIVE_GEOMETRY, NULL, 0, &DiskGeometry, sizeof(DiskGeometry), &BytesRet, NULL))
+        error(1, L"Error on DeviceIoControl IOCTL_DISK_GET_DRIVE_GEOMETRY [%d] ", BytesRet);
+
+    TestBuffSize = DiskGeometry.BytesPerSector;
+
+    if (TestBuffSize < sizeof(TEST_PATTERN) || TestBuffSize > 65536)
+        error(1, L"Windows reports an implausible sector size of %lu bytes", TestBuffSize);
+
+    TestBuff = VirtualAlloc(NULL, TestBuffSize + sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    if (TestBuff == NULL)
+        error(1, L"Cannot allocate a %lu byte aligned test buffer", TestBuffSize);
+
     // There is no going back after this...
 #ifdef SAFE
     return 0;
@@ -337,15 +358,14 @@ int wmain(int argc, WCHAR* argv[]) {
     Ovr.Offset = 0x00;
     Ovr.OffsetHigh = 0;
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
-    swprintf(TestBuff, ARRAYSIZE(TestBuff), TEST_PATTERN);
+    swprintf(TestBuff, TestBuffSize / sizeof(WCHAR), TEST_PATTERN);
 
-    if (!WriteFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!WriteFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error writing test pattern to disk");
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
+    ZeroMemory(TestBuff, TestBuffSize);
 
-    if (!ReadFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!ReadFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error reading disk");
 
     wprintf(L"Buffer before TRIM: \"%s\"\n", TestBuff);
@@ -412,10 +432,10 @@ int wmain(int argc, WCHAR* argv[]) {
     if (!DeviceIoControl(hDisk, IOCTL_SCSI_PASS_THROUGH, Buffer, BufLen, Buffer, BufLen, &BytesRet, NULL))
         error(1, L"Error performing DeviceIoControl IOCTL_SCSI_PASS_THROUGH");
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
+    ZeroMemory(TestBuff, TestBuffSize);
 
     wprintf(L"Reading test pattern...\n");
-    if (!ReadFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!ReadFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error reading disk");
 
     wprintf(L"Buffer after TRIM : \"%s\" [if empty, TRIM worked]\n", TestBuff);
