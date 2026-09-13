@@ -78,6 +78,9 @@ void error(int exit, WCHAR* msg, ...) {
 
     fflush(stdout);
 
+    // Keep later messages from reporting this error as their own.
+    SetLastError(0);
+
     if (exit)
         ExitProcess(1);
 }
@@ -168,6 +171,7 @@ int wmain(int argc, WCHAR* argv[]) {
     WCHAR*              CapacitySource;
     STORAGE_PROPERTY_QUERY trim_q = { StorageDeviceTrimProperty,  PropertyStandardQuery };
     DEVICE_TRIM_DESCRIPTOR trim_d = { 0 };
+    BOOL                TrimQueryOk;
     STORAGE_PROPERTY_QUERY desc_q = { StorageDeviceProperty,  PropertyStandardQuery };
     STORAGE_DESCRIPTOR_HEADER desc_h = { 0 };
     PSTORAGE_DEVICE_DESCRIPTOR desc_d;
@@ -221,8 +225,15 @@ int wmain(int argc, WCHAR* argv[]) {
     if (!DeviceIoControl(hDisk, IOCTL_DISK_GET_LENGTH_INFO, NULL, 0, &DiskLengthInfo, sizeof(GET_LENGTH_INFORMATION), &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_DISK_GET_LENGTH_INFO [%d] ", BytesRet);
 
-    if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &trim_q, sizeof(trim_q), &trim_d, sizeof(trim_d), &BytesRet, NULL))
-        error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Trim Property [%d] ", BytesRet);
+    //
+    // The TRIM property only feeds the "Trim:" console output.  Many
+    // USB bridges do not implement it, and whether UNMAP works is
+    // settled by the UNMAP command itself.
+    //
+    TrimQueryOk = DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &trim_q, sizeof(trim_q), &trim_d, sizeof(trim_d), &BytesRet, NULL);
+
+    if (!TrimQueryOk)
+        error(0, L"DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Trim Property not answered by this device, continuing");
 
     if (!DeviceIoControl(hDisk, IOCTL_STORAGE_QUERY_PROPERTY, &desc_q, sizeof(desc_q), &desc_h, sizeof(desc_h), &BytesRet, NULL))
         error(1, L"Error on DeviceIoControl IOCTL_STORAGE_QUERY_PROPERTY Device Property [%d] ", BytesRet);
@@ -240,7 +251,9 @@ int wmain(int argc, WCHAR* argv[]) {
             (desc_d + desc_d->ProductIdOffset) ? (char*)desc_d + desc_d->ProductIdOffset : "n/a"
         );
 
-    if (trim_d.Version == sizeof(DEVICE_TRIM_DESCRIPTOR) && trim_d.TrimEnabled == 1)
+    if (!TrimQueryOk)
+        wprintf(L"Trim: Unknown (query failed)\n");
+    else if (trim_d.Version == sizeof(DEVICE_TRIM_DESCRIPTOR) && trim_d.TrimEnabled == 1)
         wprintf(L"Trim: Supported\n");
     else
         wprintf(L"Trim: Not Supported\n");
