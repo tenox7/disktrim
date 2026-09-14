@@ -31,6 +31,8 @@
 //#define SAFE
 
 #define SENSE_INFO_LENGTH                   128
+#define SCSI_TIMEOUT_SECONDS                5
+#define UNMAP_TIMEOUT_SECONDS               600
 
 //
 // READ CAPACITY 10 carries a 32 bit LBA and saturates at 0xFFFFFFFF
@@ -104,6 +106,20 @@ BOOL ScsiPassRejected(PSCSI_PASS_THROUGH pScsiPass, WCHAR* What) {
     return TRUE;
 }
 
+void ScsiPassInit(PSCSI_PASS_THROUGH pScsiPass, UCHAR CdbLength, UCHAR DataDirection, ULONG TransferSize) {
+    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->TargetId = 1;
+    pScsiPass->PathId = 0;
+    pScsiPass->Lun = 0;
+    pScsiPass->CdbLength = CdbLength;
+    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
+    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
+    pScsiPass->DataIn = DataDirection;
+    pScsiPass->TimeOutValue = SCSI_TIMEOUT_SECONDS;
+    pScsiPass->DataTransferLength = TransferSize;
+    pScsiPass->DataBufferOffset = pScsiPass->SenseInfoOffset + pScsiPass->SenseInfoLength;
+}
+
 //
 // Ask the device for its last LBA and block size.  Returns FALSE if
 // the request fails or the device rejects the command, so the caller
@@ -128,17 +144,7 @@ BOOL ScsiReadCapacity(HANDLE hDisk, BOOL Use16, ULONG64* LastLba, ULONG* BlockSi
     if (pScsiPass == NULL)
         error(1, L"Cannot allocate %lu bytes for READ CAPACITY", BufLen);
 
-    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->TargetId = 1;
-    pScsiPass->PathId = 0;
-    pScsiPass->Lun = 0;
-    pScsiPass->CdbLength = (Use16) ? 16 : 10;
-    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
-    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->DataIn = SCSI_IOCTL_DATA_IN;
-    pScsiPass->TimeOutValue = 5;
-    pScsiPass->DataTransferLength = ReplyLen;
-    pScsiPass->DataBufferOffset = pScsiPass->SenseInfoOffset + pScsiPass->SenseInfoLength;
+    ScsiPassInit(pScsiPass, (Use16) ? 16 : 10, SCSI_IOCTL_DATA_IN, ReplyLen);
 
     pCdb = (PCDB)pScsiPass->Cdb;
 
@@ -384,17 +390,10 @@ int wmain(int argc, WCHAR* argv[]) {
 
     (PVOID)pScsiPass = Buffer;
 
-    pScsiPass->Length = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->TargetId = 1;
-    pScsiPass->PathId = 0;
-    pScsiPass->Lun = 0;
-    pScsiPass->CdbLength = 10;
-    pScsiPass->SenseInfoLength = SENSE_INFO_LENGTH;
-    pScsiPass->SenseInfoOffset = sizeof(SCSI_PASS_THROUGH);
-    pScsiPass->DataIn = SCSI_IOCTL_DATA_OUT;
-    pScsiPass->TimeOutValue = 5000;
-    pScsiPass->DataTransferLength = TransferSize;
-    pScsiPass->DataBufferOffset = sizeof(SCSI_PASS_THROUGH) + pScsiPass->SenseInfoLength;
+    ScsiPassInit(pScsiPass, 10, SCSI_IOCTL_DATA_OUT, TransferSize);
+
+    // Discarding every LBA on the device can take far longer than a query.
+    pScsiPass->TimeOutValue = UNMAP_TIMEOUT_SECONDS;
 
     pSenseCode = (PUCHAR)Buffer + pScsiPass->SenseInfoOffset;
 
