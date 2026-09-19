@@ -329,6 +329,9 @@ int wmain(int argc, WCHAR* argv[]) {
         CapacitySource = L"Windows geometry";
     }
 
+    // A fallback leaves a stale error behind; the checks below are not Win32 failures.
+    SetLastError(ERROR_SUCCESS);
+
     if (DiskBlockSize == 0 || DiskLbaCount == 0)
         error(1, L"Unusable capacity from %s: last LBA %I64u, block %lu bytes", CapacitySource, DiskLbaCount, DiskBlockSize);
 
