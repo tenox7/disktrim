@@ -184,7 +184,8 @@ int wmain(int argc, WCHAR* argv[]) {
     HANDLE              hDisk;
     WCHAR               DevName[64] = { '\0' };
     OVERLAPPED          Ovr = { 0 };
-    WCHAR               TestBuff[512] = { '\0' };
+    WCHAR*              TestBuff;
+    ULONG               TestBuffSize;
     WCHAR*              DiskNo = NULL;
     DWORD               y = 0;
     wint_t              p;
@@ -342,6 +343,22 @@ int wmain(int argc, WCHAR* argv[]) {
     wprintf(L"%s LBA: %I64u, Block: %lu, Size: %.1f GB [via %s]\n", DevName, DiskLbaCount, DiskBlockSize,
         (float)(((float)(DiskLbaCount + 1) * (float)DiskBlockSize) / 1024.0 / 1024.0 / 1024.0), CapacitySource);
 
+    //
+    // The disk was opened with FILE_FLAG_NO_BUFFERING, which requires
+    // a sector aligned buffer and a transfer of whole sectors.  One
+    // WCHAR of slack past the transfer acts as a terminator for
+    // sectors read without a NUL.
+    //
+    TestBuffSize = WinSectorSize;
+
+    if (TestBuffSize < sizeof(TEST_PATTERN) || TestBuffSize > 65536)
+        error(1, L"Windows reports an implausible sector size of %lu bytes", TestBuffSize);
+
+    TestBuff = VirtualAlloc(NULL, TestBuffSize + sizeof(WCHAR), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+
+    if (TestBuff == NULL)
+        error(1, L"Cannot allocate a %lu byte aligned test buffer", TestBuffSize);
+
     // There is no going back after this...
 #ifdef SAFE
     return 0;
@@ -362,15 +379,14 @@ int wmain(int argc, WCHAR* argv[]) {
     Ovr.Offset = 0x00;
     Ovr.OffsetHigh = 0;
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
-    swprintf(TestBuff, ARRAYSIZE(TestBuff), TEST_PATTERN);
+    swprintf(TestBuff, TestBuffSize / sizeof(WCHAR), TEST_PATTERN);
 
-    if (!WriteFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!WriteFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error writing test pattern to disk");
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
+    ZeroMemory(TestBuff, TestBuffSize);
 
-    if (!ReadFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!ReadFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error reading disk");
 
     wprintf(L"Buffer before TRIM: \"%s\"\n", TestBuff);
@@ -436,10 +452,10 @@ int wmain(int argc, WCHAR* argv[]) {
     if (ScsiPassRejected(pScsiPass, L"UNMAP"))
         error(1, L"The device refused the UNMAP command, nothing was discarded");
 
-    ZeroMemory(TestBuff, sizeof(TestBuff));
+    ZeroMemory(TestBuff, TestBuffSize);
 
     wprintf(L"Reading test pattern...\n");
-    if (!ReadFile(hDisk, TestBuff, sizeof(TestBuff), NULL, &Ovr))
+    if (!ReadFile(hDisk, TestBuff, TestBuffSize, NULL, &Ovr))
         error(1, L"Error reading disk");
 
     wprintf(L"Buffer after TRIM : \"%s\" [if empty, TRIM worked]\n", TestBuff);
